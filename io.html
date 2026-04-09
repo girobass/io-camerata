@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IO — Camerata de Coahuila</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f1a; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+  #chat-container { display: flex; flex-direction: column; width: 100%; max-width: 480px; height: 600px; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+  #chat-header { background: #1a1a2e; padding: 14px 18px; display: flex; align-items: center; gap: 12px; }
+  #io-avatar { width: 38px; height: 38px; border-radius: 50%; background: #7F77DD; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; color: #fff; flex-shrink: 0; }
+  #header-name { font-size: 15px; font-weight: 500; color: #fff; }
+  #header-sub { font-size: 12px; color: #9F9FC0; margin-top: 2px; }
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #5DCAA5; margin-left: auto; }
+  #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: #f5f5f8; }
+  .msg { display: flex; gap: 8px; align-items: flex-end; }
+  .msg.user { flex-direction: row-reverse; }
+  .bubble { max-width: 75%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; }
+  .msg.bot .bubble { background: #fff; border: 1px solid #e5e5ea; border-bottom-left-radius: 4px; color: #1a1a1a; }
+  .msg.user .bubble { background: #534AB7; color: #fff; border-bottom-right-radius: 4px; }
+  .msg-avatar { width: 28px; height: 28px; border-radius: 50%; background: #7F77DD; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #fff; flex-shrink: 0; }
+  #typing { display: none; padding: 0 0 8px; gap: 8px; align-items: center; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #7F77DD; animation: bounce 1s infinite; }
+  .dot:nth-child(2) { animation-delay: 0.15s; }
+  .dot:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+  #input-area { padding: 12px 16px; border-top: 1px solid #e5e5ea; display: flex; gap: 10px; background: #fff; align-items: center; }
+  #user-input { flex: 1; border: 1px solid #e5e5ea; border-radius: 20px; padding: 10px 16px; font-size: 14px; font-family: inherit; background: #f5f5f8; color: #1a1a1a; outline: none; }
+  #user-input:focus { border-color: #7F77DD; }
+  #send-btn { width: 38px; height: 38px; border-radius: 50%; background: #534AB7; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.15s; }
+  #send-btn:hover { background: #7F77DD; }
+  #send-btn svg { width: 16px; height: 16px; fill: #fff; }
+</style>
+</head>
+<body>
+<div id="chat-container">
+  <div id="chat-header">
+    <div id="io-avatar">IO</div>
+    <div>
+      <div id="header-name">IO</div>
+      <div id="header-sub">Asistente — Camerata de Coahuila</div>
+    </div>
+    <div id="status-dot"></div>
+  </div>
+  <div id="messages">
+    <div class="msg bot">
+      <div class="msg-avatar">IO</div>
+      <div class="bubble">Hola, soy IO, el asistente de la Camerata de Coahuila. Puedo ayudarte con informacion sobre itinerarios, repertorio, conciertos y vestuario. Como puedo ayudarte?</div>
+    </div>
+  </div>
+  <div id="typing" style="display:none; padding: 0 16px 8px; flex-direction:row; gap:8px; align-items:center;">
+    <div class="msg-avatar">IO</div>
+    <div style="display:flex;align-items:center;gap:5px;padding:10px 14px;background:#fff;border:1px solid #e5e5ea;border-radius:16px;border-bottom-left-radius:4px;">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+  </div>
+  <div id="input-area">
+    <input type="text" id="user-input" placeholder="Escribe tu pregunta..." />
+    <button id="send-btn" onclick="sendMessage()">
+      <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+<script>
+const WORKER_URL = 'https://io.girobasscompras.workers.dev';
+let conversationHistory = [];
+
+function addMessage(role, text) {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  if (role === 'bot') {
+    div.innerHTML = '<div class="msg-avatar">IO</div><div class="bubble">' + text + '</div>';
+  } else {
+    div.innerHTML = '<div class="bubble">' + text + '</div>';
+  }
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function setTyping(show) {
+  document.getElementById('typing').style.display = show ? 'flex' : 'none';
+  document.getElementById('messages').scrollTop = 99999;
+}
+
+async function sendMessage() {
+  const input = document.getElementById('user-input');
+  const text = input.value.trim();
+  if (!text) return;
+  addMessage('user', text);
+  input.value = '';
+  conversationHistory.push({ role: 'user', content: text });
+  setTyping(true);
+  try {
+    const response = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: conversationHistory })
+    });
+    const data = await response.json();
+    setTyping(false);
+    if (data.error) {
+      addMessage('bot', 'Error: ' + (data.error.message || JSON.stringify(data.error)));
+      conversationHistory.pop();
+      return;
+    }
+    let assistantText = '';
+    let assistantContent = data.content || [];
+    for (const block of assistantContent) {
+      if (block.type === 'text') assistantText += block.text;
+    }
+    if (assistantText) {
+      conversationHistory.push({ role: 'assistant', content: assistantContent });
+      addMessage('bot', assistantText);
+    } else {
+      addMessage('bot', 'No encontre informacion sobre eso. Te sugiero contactar a la administracion.');
+      conversationHistory.pop();
+    }
+  } catch (err) {
+    setTyping(false);
+    addMessage('bot', 'Error de conexion: ' + err.message);
+    conversationHistory.pop();
+  }
+}
+
+document.getElementById('user-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') sendMessage();
+});
+</script>
+</body>
+</html>
