@@ -32,13 +32,6 @@
   #send-btn { width: 38px; height: 38px; border-radius: 50%; background: #534AB7; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.15s; }
   #send-btn:hover { background: #7F77DD; }
   #send-btn svg { width: 16px; height: 16px; fill: #fff; }
-  .search-prompt { background: #fff; border: 1px solid #e5e5ea; border-radius: 16px; border-bottom-left-radius: 4px; padding: 12px 14px; font-size: 14px; line-height: 1.5; color: #1a1a1a; max-width: 85%; }
-  .search-prompt p { margin-bottom: 8px; }
-  .btn-row { display: flex; gap: 8px; margin-top: 8px; }
-  .btn-si { padding: 7px 16px; background: #534AB7; color: #fff; border: none; border-radius: 20px; font-size: 13px; cursor: pointer; }
-  .btn-si:hover { background: #7F77DD; }
-  .btn-no { padding: 7px 16px; background: transparent; color: #534AB7; border: 1px solid #534AB7; border-radius: 20px; font-size: 13px; cursor: pointer; }
-  .btn-no:hover { background: #f0eeff; }
 </style>
 </head>
 <body>
@@ -91,67 +84,9 @@ function addMessage(role, text) {
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-function addSearchPrompt() {
-  const msgs = document.getElementById('messages');
-  const div = document.createElement('div');
-  div.className = 'msg bot';
-  div.id = 'search-prompt-msg';
-  div.innerHTML = `
-    <div class="msg-avatar">IO</div>
-    <div class="search-prompt">
-      <p>No encontre esa informacion en el sistema de la Camerata.</p>
-      <p>¿Quieres que busque en internet?</p>
-      <p style="font-size:12px;color:#999;">⚠️ La informacion externa puede no ser 100% confiable.</p>
-      <div class="btn-row">
-        <button class="btn-si" onclick="approveSearch()">Si, buscar</button>
-        <button class="btn-no" onclick="declineSearch()">No, gracias</button>
-      </div>
-    </div>`;
-  msgs.appendChild(div);
-  msgs.scrollTop = msgs.scrollHeight;
-}
-
-function removeSearchPrompt() {
-  const el = document.getElementById('search-prompt-msg');
-  if (el) el.remove();
-}
-
 function setTyping(show) {
   document.getElementById('typing').style.display = show ? 'flex' : 'none';
   document.getElementById('messages').scrollTop = 99999;
-}
-
-async function approveSearch() {
-  removeSearchPrompt();
-  addMessage('user', 'Si, busca en internet');
-  setTyping(true);
-  try {
-    const response = await fetch(WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: conversationHistory, searchApproved: true })
-    });
-    const data = await response.json();
-    setTyping(false);
-    let assistantText = '';
-    for (const block of (data.content || [])) {
-      if (block.type === 'text') assistantText += block.text;
-    }
-    if (assistantText) {
-      conversationHistory.push({ role: 'assistant', content: data.content });
-      addMessage('bot', assistantText);
-    } else {
-      addMessage('bot', 'No encontre resultados en internet sobre eso.');
-    }
-  } catch (err) {
-    setTyping(false);
-    addMessage('bot', 'Error de conexion: ' + err.message);
-  }
-}
-
-function declineSearch() {
-  removeSearchPrompt();
-  addMessage('bot', 'De acuerdo. Si tienes otra pregunta, con gusto te ayudo.');
 }
 
 async function sendMessage() {
@@ -166,7 +101,7 @@ async function sendMessage() {
     const response = await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: conversationHistory, searchApproved: false })
+      body: JSON.stringify({ messages: conversationHistory })
     });
     const data = await response.json();
     setTyping(false);
@@ -175,16 +110,13 @@ async function sendMessage() {
       conversationHistory.pop();
       return;
     }
-    if (data.notFound) {
-      addSearchPrompt();
-      return;
-    }
     let assistantText = '';
-    for (const block of (data.content || [])) {
+    let assistantContent = data.content || [];
+    for (const block of assistantContent) {
       if (block.type === 'text') assistantText += block.text;
     }
     if (assistantText) {
-      conversationHistory.push({ role: 'assistant', content: data.content });
+      conversationHistory.push({ role: 'assistant', content: assistantContent });
       addMessage('bot', assistantText);
     } else {
       addMessage('bot', 'No tengo esa informacion disponible.');
